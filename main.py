@@ -16,12 +16,60 @@ NOTION_HEADERS = {
 IDEA, AREA, ESTADO = range(3)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("¡Hola! Mándame una idea para tu GTD.")
+    await update.message.reply_text("Mándame una idea")
     return IDEA
 
 async def handle_idea(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['idea'] = update.message.text
-    await update.message.reply_text(f"Idea: {update.message.text}\n\n¿Cuál es el área?\nOMG / SCR / DPM / NDS / OTH / PERSONAL")
+    await update.message.reply_text("¿Área? OMG / SCR / DPM / NDS / OTH / PERSONAL")
     return AREA
 
-async def
+async def handle_area(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    area = update.message.text.upper().strip()
+    if area not in ["OMG", "SCR", "DPM", "NDS", "OTH", "PERSONAL"]:
+        await update.message.reply_text("Área no válida")
+        return AREA
+    context.user_data['area'] = area
+    await update.message.reply_text("¿Estado? INBOX / PROJECTS / NEXT ACTIONS / WAITING FOR / SOMEDAY/MAYBE / DONE")
+    return ESTADO
+
+async def handle_estado(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    estado = update.message.text.upper().strip()
+    if estado not in ["INBOX", "PROJECTS", "NEXT ACTIONS", "WAITING FOR", "SOMEDAY/MAYBE", "DONE"]:
+        await update.message.reply_text("Estado no válido")
+        return ESTADO
+    idea = context.user_data['idea']
+    area = context.user_data['area']
+    add_to_notion(idea, area, estado)
+    await update.message.reply_text(f"✅ Agregada a {area}")
+    return ConversationHandler.END
+
+def add_to_notion(title, area, estado):
+    url = "https://api.notion.com/v1/pages"
+    payload = {
+        "parent": {"database_id": NOTION_DATABASE_ID},
+        "properties": {
+            "Name": {"title": [{"text": {"content": title}}]},
+            "Área": {"select": {"name": area}},
+            "Estado": {"select": {"name": estado}},
+            "Descripción": {"rich_text": [{"text": {"content": "Telegram"}}]}
+        }
+    }
+    requests.post(url, headers=NOTION_HEADERS, json=payload)
+
+def main():
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            IDEA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_idea)],
+            AREA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_area)],
+            ESTADO: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_estado)],
+        },
+        fallbacks=[CommandHandler("start", start)],
+    )
+    app.add_handler(conv_handler)
+    app.run_polling()
+
+if __name__ == '__main__':
+    main()

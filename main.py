@@ -1,8 +1,7 @@
 import os
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 import requests
-import json
 
 TELEGRAM_TOKEN = "8826930371:AAGlN3toSH3ycoHPw4SBgQNb00NURlMtrGI"
 NOTION_API_KEY = "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"
@@ -14,25 +13,29 @@ NOTION_HEADERS = {
     "Notion-Version": "2022-06-28"
 }
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("¡Hola! Soy tu bot GTD.\nMandame una idea y te pediré el área.\nÁreas: OMG, SCR, DPM, NDS, OTH, PERSONAL")
+IDEA, AREA = range(2)
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    idea = update.message.text
-    context.user_data['current_idea'] = idea
-    await update.message.reply_text(f"Idea: {idea}\n\n¿Cuál es el área?\nOMG / SCR / DPM / NDS / OTH / PERSONAL")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("¡Hola! Mándame una idea para tu GTD.")
+    return IDEA
 
-async def handle_area(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_idea(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data['idea'] = update.message.text
+    await update.message.reply_text(f"Idea: {update.message.text}\n\n¿Cuál es el área?\nOMG / SCR / DPM / NDS / OTH / PERSONAL")
+    return AREA
+
+async def handle_area(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     area = update.message.text.upper().strip()
     areas = ["OMG", "SCR", "DPM", "NDS", "OTH", "PERSONAL"]
     
     if area not in areas:
-        await update.message.reply_text("Área no válida. Intenta de nuevo.")
-        return
+        await update.message.reply_text("Área no válida. Intenta: OMG / SCR / DPM / NDS / OTH / PERSONAL")
+        return AREA
     
-    idea = context.user_data.get('current_idea', '')
+    idea = context.user_data.get('idea', '')
     add_to_notion(idea, area)
     await update.message.reply_text(f"✅ Idea agregada a {area}")
+    return ConversationHandler.END
 
 def add_to_notion(title: str, area: str):
     url = "https://api.notion.com/v1/pages"
@@ -52,8 +55,17 @@ def add_to_notion(title: str, area: str):
 
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT, handle_message))
+    
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            IDEA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_idea)],
+            AREA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_area)],
+        },
+        fallbacks=[CommandHandler("start", start)],
+    )
+    
+    app.add_handler(conv_handler)
     app.run_polling()
 
 if __name__ == '__main__':
